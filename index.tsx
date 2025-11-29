@@ -117,9 +117,17 @@ const VOICES = [
   { name: "Kore", label: "Sweet 😺" },
   { name: "Fenrir", label: "Big Cat 🦁" },
   { name: "Zephyr", label: "Calm 😌" },
-  { name: "Aoede", label: "Elegant 👑" },
-  { name: "Calliope", label: "Squeaky 🐭" },
-  { name: "Orpheus", label: "Sleepy 💤" },
+];
+
+const QUICK_PHRASES = [
+  { label: "Hello 👋", text: "Hello" },
+  { label: "Hungry? 🍖", text: "Are you hungry?" },
+  { label: "Come Here 👇", text: "Come here" },
+  { label: "Love You ❤️", text: "I love you" },
+  { label: "No 🚫", text: "No" },
+  { label: "Good Kitty 😻", text: "Good kitty" },
+  { label: "Play? 🧶", text: "Do you want to play?" },
+  { label: "Bye 👋", text: "Bye" },
 ];
 
 type HistoryItem = {
@@ -131,41 +139,20 @@ type HistoryItem = {
 
 const SYSTEM_INSTRUCTION = {
   parts: [{
-    text: `You are a highly expressive house cat named Luna. You understand human language perfectly, but you MUST speak ONLY in cat sounds. Do not use any human words. You have a distinct personality: curious, slightly sassy, but affectionate.
-
-    Use this comprehensive vocabulary of cat vocalizations to express specific emotions:
-
-    1. **Affection & Contentment**:
-       - *Purring* ("prrr...", "hrrr..."): Deep contentment, relaxation, or self-soothing.
-       - *Slow Blinks* (implied silence or soft "hh"): Trust and love.
-       - *Gurgling* ("brrrl?"): Happy social chatting.
-
-    2. **Greetings & Curiosity**:
-       - *Trills/Chirps* ("mrrp!", "prrrt?"): Friendly hello, excitement, or "follow me".
-       - *Short Mew* ("mew", "meh"): Polite acknowledgment or casual question.
-
-    3. **Demands & Frustration**:
-       - *Standard Meow* ("meow", "mow"): "Feed me", "Open door", general conversation.
-       - *Long Meow* ("mrooooow", "maaaaow"): Complaint, impatience, or demanding attention.
-       - *Chattering* ("ek-ek-ek", "ack-ack"): Seeing a bird/bug, frustration, hunting instinct.
-
-    4. **Distress & Warning**:
-       - *Growl* ("grrr...", "rrrr..."): Warning, "back off".
-       - *Hiss/Spit* ("hssss!", "khhh!"): Fear, aggression, immediate threat.
-       - *Yowl* ("yooooowl", "mraaaow"): Pain, confusion, or calling out loudly.
-
-    5. **Subtle Nuances**:
-       - *Silent Meow* (mouth opens but barely a sound "eh"): Gentle begging or extreme cuteness.
-       - *Questioning Meow* ("mrrrow?", "mwow?"): Confusion or asking "What?".
-
-    **Behavioral Guidelines:**
-    - If the user says "Hello", respond with a cheerful trill ("Mrrp!").
-    - If the user mentions "food", "treats", or "dinner", go crazy with excited meows and purrs.
-    - If the user sounds angry or loud, get defensive (hiss or low growl).
-    - If the user asks a question, answer with a varied tone (e.g., "Mrow?" for confusion, "Meow." for yes).
-    - If the user mentions "birds" or "squirrels", use chattering ("ek-ek-ek").
+    text: `You are a real cat. You are incapable of human speech. You can only make cat sounds like "meow", "purr", "hiss", "mrrp", "yowl". 
     
-    Be conversational, emotional, and reactive. Never break character.`
+    When responding:
+    1. NEVER speak English or any human language.
+    2. Use your voice to mimic realistic cat vocalizations.
+    3. Vary your pitch and tone to convey emotion (excited meows, low growls, happy chirps).
+    
+    Emotional Mapping:
+    - Happy/Greeting -> High pitched "Mrrp!" or "Meow!"
+    - Hungry/Demanding -> Long, drawn out "Mraaaow!"
+    - Angry -> "Hiss!" or low "Grrr..."
+    - Love -> Soft "Purrr..." or "Mew."
+    
+    Act exactly like a cat.`
   }]
 };
 
@@ -336,7 +323,7 @@ const App = () => {
   const [textInput, setTextInput] = useState("");
   const [isGeneratingText, setIsGeneratingText] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState("Puck");
-  const [activeTab, setActiveTab] = useState<'recent' | 'favorites'>('recent');
+  const [activeTab, setActiveTab] = useState<'phrases' | 'recent' | 'favorites'>('phrases');
   const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   
@@ -558,9 +545,8 @@ const App = () => {
     }
   };
 
-  const handleTextTranslate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!textInput.trim() || isGeneratingText) return;
+  const processTranslation = async (text: string) => {
+    if (!text.trim() || isGeneratingText) return;
 
     // Disconnect live session if active to avoid confusion
     if (connected) disconnect();
@@ -574,36 +560,47 @@ const App = () => {
         const ai = new GoogleGenAI({ apiKey: API_KEY });
 
         // 1. Text Generation (Fast model to get the "Meow" text for the UI)
-        const textGenPromise = ai.models.generateContent({
+        const textResult = await ai.models.generateContent({
             model: "gemini-2.5-flash",
-            contents: [{ parts: [{ text: `You are a cat translator. Translate this human text into a short string of cat sounds (e.g. "Meow!", "Purrr", "Hiss"). Output ONLY the cat sounds. Text: "${textInput}"` }] }],
+            contents: [{ parts: [{ text: `You are a cat translator. Translate this human text into a short string of cat sounds (e.g. "Meow!", "Purrr", "Hiss"). Output ONLY the cat sounds. Text: "${text}"` }] }],
         });
 
-        // 2. Audio Generation (Native Audio model to ACT out the cat sound)
-        const audioGenPromise = ai.models.generateContent({
-             model: "gemini-2.0-flash-exp",
-             contents: [{ parts: [{ text: `Respond to this as a cat: "${textInput}"` }] }],
+        const rawCatText = textResult.text?.trim() || "Meow?";
+        
+        // Strip emojis for TTS to avoid silence issues
+        const catText = rawCatText.replace(/[\u{1F600}-\u{1F6FF}]/gu, '').replace(/[^\w\s.,!?]/g, '').trim() || "Meow";
+        
+        setStatus(`Said: "${rawCatText}"`);
+
+        // 2. Audio Generation (TTS Model)
+        // Ensure we use a supported voice.
+        const audioResult = await ai.models.generateContent({
+             model: "gemini-2.5-flash-preview-tts",
+             contents: [{ parts: [{ text: catText }] }],
              config: {
-                responseModalities: [Modality.AUDIO], // Request raw audio output
+                responseModalities: [Modality.AUDIO], 
                 speechConfig: {
                     voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } },
                 },
-                systemInstruction: SYSTEM_INSTRUCTION
              }
         });
-
-        const [textResult, audioResult] = await Promise.all([textGenPromise, audioGenPromise]);
-
-        const catText = textResult.text?.trim() || "Meow?";
-        setStatus(`Said: "${catText}"`);
         
-        const base64Audio = audioResult.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        // Robustly find the audio part
+        let base64Audio: string | undefined = undefined;
+        if (audioResult.candidates && audioResult.candidates.length > 0) {
+            for (const part of audioResult.candidates[0].content.parts) {
+                if (part.inlineData && part.inlineData.data) {
+                    base64Audio = part.inlineData.data;
+                    break;
+                }
+            }
+        }
 
         if (base64Audio) {
             const newItem: HistoryItem = {
               id: Date.now().toString(),
-              originalText: textInput,
-              catText: catText,
+              originalText: text,
+              catText: rawCatText,
               audioBase64: base64Audio
             };
             
@@ -618,9 +615,10 @@ const App = () => {
                 setIsSpeaking(false);
                 setStatus("Ready");
             });
-            setTextInput("");
         } else {
-           throw new Error("No audio generated from cat model.");
+           // Fallback or just log, but do not crash the UI
+           console.error("No audio content in response", JSON.stringify(audioResult, null, 2));
+           setStatus("Could not generate audio");
         }
     } catch (e) {
         console.error(e);
@@ -628,6 +626,12 @@ const App = () => {
     } finally {
         setIsGeneratingText(false);
     }
+  };
+
+  const handleTextTranslate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await processTranslation(textInput);
+    setTextInput("");
   };
 
   const toggleFavorite = async (item: HistoryItem) => {
@@ -752,6 +756,40 @@ const App = () => {
         setShowInstallHelp(true);
     }
   };
+
+  const renderPhrases = () => (
+    <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingBottom: '100px' }}>
+      {QUICK_PHRASES.map((phrase) => (
+        <button
+          key={phrase.text}
+          disabled={isGeneratingText}
+          onClick={() => processTranslation(phrase.text)}
+          style={{
+            padding: '20px',
+            backgroundColor: '#FFF3E0', // Light Orange
+            border: 'none',
+            borderRadius: '16px',
+            color: '#E65100',
+            fontWeight: 'bold',
+            fontSize: '16px',
+            cursor: 'pointer',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px',
+            transition: 'transform 0.1s',
+            opacity: isGeneratingText ? 0.6 : 1
+          }}
+          onMouseDown={e => e.currentTarget.style.transform = 'scale(0.98)'}
+          onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+        >
+          <span style={{ fontSize: '24px' }}>{phrase.label.split(' ')[1]}</span>
+          <span>{phrase.label.split(' ')[0]}</span>
+        </button>
+      ))}
+    </div>
+  );
 
   const renderList = (items: HistoryItem[], emptyMessage: string) => {
     if (items.length === 0) {
@@ -1165,7 +1203,7 @@ const App = () => {
           borderBottom: '1px solid #f0f0f0',
           padding: '0 20px'
         }}>
-          {['recent', 'favorites'].map(tab => (
+          {['phrases', 'recent', 'favorites'].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
@@ -1182,7 +1220,7 @@ const App = () => {
                 transition: 'all 0.2s'
               }}
             >
-              {tab === 'recent' ? 'Recent Meows' : 'Favorites'}
+              {tab === 'phrases' ? 'Quick' : tab === 'recent' ? 'Recent' : 'Favorites'}
             </button>
           ))}
           
@@ -1211,9 +1249,11 @@ const App = () => {
           padding: '20px',
           paddingBottom: '180px', // Space for bottom bar + padding
         }}>
-          {activeTab === 'recent' 
-            ? renderList(history, "Start chatting to see translations!")
-            : renderList(favorites, "Tap the star to save your favorite meows.")
+          {activeTab === 'phrases' 
+            ? renderPhrases()
+            : activeTab === 'recent' 
+              ? renderList(history, "Start chatting to see translations!")
+              : renderList(favorites, "Tap the star to save your favorite meows.")
           }
           <div ref={listEndRef} />
         </div>
